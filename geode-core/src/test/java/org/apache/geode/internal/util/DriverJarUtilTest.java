@@ -63,5 +63,4 @@ public class DriverJarUtilTest {
     util.deregisterDriver(driverName);
     verify(util).deregisterDriverWithDriverManager(any());
   }
-
 }

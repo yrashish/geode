@@ -14,6 +14,7 @@
  */
 package org.apache.geode.connectors.jdbc.internal.cli;
 
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Set;
 
@@ -28,12 +29,14 @@ import org.apache.geode.cache.configuration.RegionConfig;
 import org.apache.geode.connectors.jdbc.internal.configuration.RegionMapping;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.InternalConfigurationPersistenceService;
+import org.apache.geode.internal.util.DriverJarUtil;
 import org.apache.geode.management.cli.CliMetaData;
 import org.apache.geode.management.cli.SingleGfshCommand;
 import org.apache.geode.management.internal.cli.commands.CreateJndiBindingCommand;
 import org.apache.geode.management.internal.cli.functions.CliFunctionResult;
 import org.apache.geode.management.internal.cli.functions.DestroyJndiBindingFunction;
 import org.apache.geode.management.internal.cli.i18n.CliStrings;
+import org.apache.geode.management.internal.cli.result.model.InfoResultModel;
 import org.apache.geode.management.internal.cli.result.model.ResultModel;
 import org.apache.geode.management.internal.exceptions.EntityNotFoundException;
 import org.apache.geode.management.internal.security.ResourceOperation;
@@ -49,6 +52,10 @@ public class DestroyDataSourceCommand extends SingleGfshCommand {
       "Skip the destroy operation when the specified data source does "
           + "not exist. Without this option, an error results from the specification "
           + "of a data source that does not exist.";
+  static final String DEREGISTER_DRIVER = "deregister-driver";
+  static final String DEREGISTER_DRIVER_HELP =
+      "Indicates whether or not the driver class associated"
+          + "with the target data source should be deregistered during the destroy process.";
 
   @CliCommand(value = DESTROY_DATA_SOURCE, help = DESTROY_DATA_SOURCE_HELP)
   @CliMetaData(relatedTopic = CliStrings.TOPIC_GEODE_REGION)
@@ -57,11 +64,15 @@ public class DestroyDataSourceCommand extends SingleGfshCommand {
   public ResultModel destroyDataSource(
       @CliOption(key = DATA_SOURCE_NAME, mandatory = true,
           help = DATA_SOURCE_NAME_HELP) String dataSourceName,
+      @CliOption(key = DEREGISTER_DRIVER,
+          help = DEREGISTER_DRIVER_HELP, specifiedDefaultValue = "true",
+          unspecifiedDefaultValue = "false") boolean deregisterDriver,
       @CliOption(key = CliStrings.IFEXISTS, help = IFEXISTS_HELP, specifiedDefaultValue = "true",
           unspecifiedDefaultValue = "false") boolean ifExists) {
 
     InternalConfigurationPersistenceService service =
         (InternalConfigurationPersistenceService) getConfigurationPersistenceService();
+    String driverClassName = null;
     if (service != null) {
       List<JndiBindingsType.JndiBinding> bindings =
           service.getCacheConfig("cluster").getJndiBindings();
@@ -86,6 +97,9 @@ public class DestroyDataSourceCommand extends SingleGfshCommand {
             dataSourceName, ex.getMessage()));
 
       }
+      if (deregisterDriver) {
+        driverClassName = binding.getJdbcDriverClass();
+      }
     }
 
     Set<DistributedMember> targetMembers = findMembers(null, null);
@@ -109,14 +123,27 @@ public class DestroyDataSourceCommand extends SingleGfshCommand {
       }
 
       ResultModel result = ResultModel.createMemberStatusResult(dataSourceDestroyResult);
+      InfoResultModel infoModel = result.addInfo();
+      String deregisterResult = deregisterDriver(deregisterDriver, driverClassName, dataSourceName);
+      if (deregisterResult != null) {
+        infoModel.addLine(deregisterResult);
+      }
       result.setConfigObject(dataSourceName);
 
       return result;
     } else {
       if (service != null) {
-        ResultModel result =
-            ResultModel
-                .createInfo("No members found, data source removed from cluster configuration.");
+        // ResultModel result =
+        // ResultModel
+        // .createInfo("No members found, data source removed from cluster configuration.");
+        ResultModel result = new ResultModel();
+        InfoResultModel infoModel = result.addInfo();
+        infoModel.addLine("No members found, data source removed from cluster configuration.");
+        String deregisterResult =
+            deregisterDriver(deregisterDriver, driverClassName, dataSourceName);
+        if (deregisterResult != null) {
+          infoModel.addLine(deregisterResult);
+        }
         result.setConfigObject(dataSourceName);
         return result;
       } else {
@@ -147,6 +174,27 @@ public class DestroyDataSourceCommand extends SingleGfshCommand {
   private boolean isDataSource(JndiBindingsType.JndiBinding binding) {
     return CreateJndiBindingCommand.DATASOURCE_TYPE.SIMPLE.getType().equals(binding.getType())
         || CreateJndiBindingCommand.DATASOURCE_TYPE.POOLED.getType().equals(binding.getType());
+  }
+
+  private String deregisterDriver(boolean deregisterDriver, String driverClassName,
+      String dataSourceName) {
+    if (deregisterDriver && driverClassName != null) {
+      DriverJarUtil util = createDriverJarUtil();
+      try {
+        util.deregisterDriver(driverClassName);
+      } catch (SQLException ex) {
+        return "Warning: deregistering \"" + driverClassName + "\" while destroying data source \""
+            + dataSourceName + "\" failed with exception: " + ex.getMessage();
+      }
+    } else if (deregisterDriver && driverClassName == null) {
+      return "Warning: deregistering \"" + driverClassName + "\" while destroying data source \""
+          + dataSourceName + "\" failed: No driver class name found";
+    }
+    return null;
+  }
+
+  DriverJarUtil createDriverJarUtil() {
+    return new DriverJarUtil();
   }
 
   @Override

@@ -20,12 +20,14 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNotNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -47,6 +49,7 @@ import org.apache.geode.connectors.jdbc.internal.configuration.RegionMapping;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.internal.InternalConfigurationPersistenceService;
 import org.apache.geode.internal.cache.InternalCache;
+import org.apache.geode.internal.util.DriverJarUtil;
 import org.apache.geode.management.internal.cli.commands.CreateJndiBindingCommand;
 import org.apache.geode.management.internal.cli.functions.CliFunctionResult;
 import org.apache.geode.management.internal.cli.functions.DestroyJndiBindingFunction;
@@ -344,6 +347,135 @@ public class DestroyDataSourceCommandTest {
         .tableHasColumnOnlyWithValues("Member", "server1")
         .tableHasColumnOnlyWithValues("Status", "OK")
         .tableHasColumnOnlyWithValues("Message", "Data source \"name\" destroyed on \"server1\"");
+
+    assertThat(cacheConfig.getJndiBindings().isEmpty()).isTrue();
+    verify(command).updateConfigForGroup(eq("cluster"), eq(cacheConfig), any());
+
+    ArgumentCaptor<DestroyJndiBindingFunction> function =
+        ArgumentCaptor.forClass(DestroyJndiBindingFunction.class);
+    ArgumentCaptor<Object[]> arguments = ArgumentCaptor.forClass(Object[].class);
+
+    ArgumentCaptor<Set<DistributedMember>> targetMembers = ArgumentCaptor.forClass(Set.class);
+    verify(command, times(1)).executeAndGetFunctionResult(function.capture(), arguments.capture(),
+        targetMembers.capture());
+
+    String jndiName = (String) arguments.getValue()[0];
+    boolean destroyingDataSource = (boolean) arguments.getValue()[1];
+
+    assertThat(function.getValue()).isInstanceOf(DestroyJndiBindingFunction.class);
+    assertThat(jndiName).isEqualTo("name");
+    assertThat(destroyingDataSource).isEqualTo(true);
+    assertThat(targetMembers.getValue()).isEqualTo(members);
+  }
+
+  @Test
+  public void destroyDataSourceWithDeregisterDriverSucceedsWithWarning() {
+    List<JndiBindingsType.JndiBinding> bindings = new ArrayList<>();
+    JndiBindingsType.JndiBinding jndiBinding = new JndiBindingsType.JndiBinding();
+    jndiBinding.setJndiName("name");
+    jndiBinding.setType(CreateJndiBindingCommand.DATASOURCE_TYPE.SIMPLE.getType());
+    bindings.add(jndiBinding);
+    doReturn(bindings).when(cacheConfig).getJndiBindings();
+
+    Set<DistributedMember> members = new HashSet<>();
+    members.add(mock(DistributedMember.class));
+
+    CliFunctionResult result =
+        new CliFunctionResult("server1", true, "Data source \"name\" destroyed on \"server1\"");
+    List<CliFunctionResult> results = new ArrayList<>();
+    results.add(result);
+
+    doReturn(members).when(command).findMembers(any(), any());
+    doReturn(results).when(command).executeAndGetFunctionResult(any(), any(), any());
+
+    gfsh.executeAndAssertThat(command, COMMAND + " --name=name --deregister-driver")
+        .statusIsSuccess()
+        .tableHasColumnOnlyWithValues("Member", "server1")
+        .tableHasColumnOnlyWithValues("Status", "OK")
+        .tableHasColumnOnlyWithValues("Message", "Data source \"name\" destroyed on \"server1\"");
+
+    assertThat(cacheConfig.getJndiBindings().isEmpty()).isTrue();
+    verify(command).updateConfigForGroup(eq("cluster"), eq(cacheConfig), any());
+
+    ArgumentCaptor<DestroyJndiBindingFunction> function =
+        ArgumentCaptor.forClass(DestroyJndiBindingFunction.class);
+    ArgumentCaptor<Object[]> arguments = ArgumentCaptor.forClass(Object[].class);
+
+    ArgumentCaptor<Set<DistributedMember>> targetMembers = ArgumentCaptor.forClass(Set.class);
+    verify(command, times(1)).executeAndGetFunctionResult(function.capture(), arguments.capture(),
+        targetMembers.capture());
+
+    String jndiName = (String) arguments.getValue()[0];
+    boolean destroyingDataSource = (boolean) arguments.getValue()[1];
+
+    assertThat(function.getValue()).isInstanceOf(DestroyJndiBindingFunction.class);
+    assertThat(jndiName).isEqualTo("name");
+    assertThat(destroyingDataSource).isEqualTo(true);
+    assertThat(targetMembers.getValue()).isEqualTo(members);
+  }
+
+  @Test
+  public void destroyDataSourceThrowsSQLExceptpionWithRegisterDriverAndBadDriverClassName()
+      throws SQLException {
+    DriverJarUtil util = mock(DriverJarUtil.class);
+    doReturn(util).when(command).createDriverJarUtil();
+
+    String exceptionMessage = "Command failed as expected.";
+
+    doThrow(new SQLException(exceptionMessage)).when(util).deregisterDriver(any());
+
+    List<JndiBindingsType.JndiBinding> bindings = new ArrayList<>();
+    JndiBindingsType.JndiBinding jndiBinding = new JndiBindingsType.JndiBinding();
+    jndiBinding.setJndiName("name");
+    jndiBinding.setJdbcDriverClass("badDriverClassName");
+    jndiBinding.setType(CreateJndiBindingCommand.DATASOURCE_TYPE.SIMPLE.getType());
+    bindings.add(jndiBinding);
+    doReturn(bindings).when(cacheConfig).getJndiBindings();
+
+    Set<DistributedMember> members = new HashSet<>();
+    members.add(mock(DistributedMember.class));
+
+    CliFunctionResult result =
+        new CliFunctionResult("server1", true, "Data source \"name\" destroyed on \"server1\"");
+    List<CliFunctionResult> results = new ArrayList<>();
+    results.add(result);
+
+    doReturn(members).when(command).findMembers(any(), any());
+    doReturn(results).when(command).executeAndGetFunctionResult(any(), any(), any());
+
+    gfsh.executeAndAssertThat(command, COMMAND + " --name=name --deregister-driver")
+        .containsOutput(exceptionMessage);
+  }
+
+  @Test
+  public void destroyDataSourceWithDeregisterDriverSucceedsWithoutWarnings() {
+    DriverJarUtil util = mock(DriverJarUtil.class);
+
+    List<JndiBindingsType.JndiBinding> bindings = new ArrayList<>();
+    JndiBindingsType.JndiBinding jndiBinding = new JndiBindingsType.JndiBinding();
+    jndiBinding.setJndiName("name");
+    jndiBinding.setJdbcDriverClass("driverClassName");
+    jndiBinding.setType(CreateJndiBindingCommand.DATASOURCE_TYPE.SIMPLE.getType());
+    bindings.add(jndiBinding);
+    doReturn(bindings).when(cacheConfig).getJndiBindings();
+
+    Set<DistributedMember> members = new HashSet<>();
+    members.add(mock(DistributedMember.class));
+
+    CliFunctionResult result =
+        new CliFunctionResult("server1", true, "Data source \"name\" destroyed on \"server1\"");
+    List<CliFunctionResult> results = new ArrayList<>();
+    results.add(result);
+
+    doReturn(members).when(command).findMembers(any(), any());
+    doReturn(results).when(command).executeAndGetFunctionResult(any(), any(), any());
+
+    gfsh.executeAndAssertThat(command, COMMAND + " --name=name --deregister-driver")
+        .statusIsSuccess()
+        .tableHasColumnOnlyWithValues("Member", "server1")
+        .tableHasColumnOnlyWithValues("Status", "OK")
+        .tableHasColumnOnlyWithValues("Message", "Data source \"name\" destroyed on \"server1\"")
+        .doesNotContainOutput("Warning:");
 
     assertThat(cacheConfig.getJndiBindings().isEmpty()).isTrue();
     verify(command).updateConfigForGroup(eq("cluster"), eq(cacheConfig), any());
