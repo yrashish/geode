@@ -41,7 +41,7 @@ public class CqServiceProvider {
   /**
    * A debug flag used for testing vMotion during CQ registration
    */
-  public static final boolean VMOTION_DURING_CQ_REGISTRATION_FLAG = false;
+  public static boolean VMOTION_DURING_CQ_REGISTRATION_FLAG = false;
 
   static {
     ServiceLoader<CqServiceFactory> loader = ServiceLoader.load(CqServiceFactory.class);

@@ -47,12 +47,12 @@ import org.apache.geode.security.ResourcePermission.Resource;
 public class RegisterInterest61 extends BaseCommand {
 
   @Immutable
-  private static final RegisterInterest61 singleton = new RegisterInterest61();
+  private static RegisterInterest61 singleton = new RegisterInterest61();
 
   /**
    * A debug flag used for testing vMotion during CQ registration
    */
-  public static final boolean VMOTION_DURING_REGISTER_INTEREST_FLAG = false;
+  public static boolean VMOTION_DURING_REGISTER_INTEREST_FLAG = false;
 
   public static Command getCommand() {
     return singleton;
