@@ -95,61 +95,6 @@ GRADLE_GLOBAL_ARGS: ((gradle-global-args))
   {%- endfor -%}
 {% endmacro %}
 
-groups:
-- name: main
-  jobs:
-  - {{ build_test.name }}
-  {{- all_gating_jobs() | indent(2) }}
-  - UpdatePassingTokens
-  {%- if repository.upstream_fork != "apache" or repository.branch == "develop" or repository.branch.startswith("support/") %}
-  - PublishArtifacts
-  {%- endif %}
-- name: complete
-  jobs:
-  - {{ build_test.name }}
-  {{- all_gating_jobs() | indent(2) }}
-  {%- if repository.upstream_fork != "apache" or repository.branch == "develop" or repository.branch.startswith("support/") %}
-  - PublishArtifacts
-  {%- endif %}
-  - UpdatePassingTokens
-- name: linux
-  jobs:
-  - {{ build_test.name }}
-  {%- for test in (tests) if test.PLATFORM=="linux" and not test.name=="StressNew" -%}
-    {% for java_test_version in (java_test_versions) if ((not test.ONLY_JDK is defined) or test.ONLY_JDK==java_test_version.version) %}
-  - {{test.name}}Test{{java_test_version.name}}
-    {%- endfor -%}
-  {%- endfor %}
-  {%- for flavor in (benchmarks.flavors) %}
-  - Benchmark{{flavor.title}}
-  {%- endfor %}
-- name: windows
-  jobs:
-  - {{ build_test.name }}
-  {%- for test in (tests) if test.PLATFORM=="windows" -%}
-    {% for java_test_version in (java_test_versions) if ((not test.ONLY_JDK is defined) or test.ONLY_JDK==java_test_version.version) %}
-  - {{test.name}}Test{{java_test_version.name}}
-    {%- endfor -%}
-  {%- endfor %}
-{%- for java_test_version in (java_test_versions) %}
-- name: {{java_test_version.name}}
-  jobs:
-  - {{ build_test.name }}
-  {%- for test in (tests) if (not test.name=="StressNew") and ((not test.ONLY_JDK is defined) or test.ONLY_JDK==java_test_version.version) %}
-  - {{test.name}}Test{{java_test_version.name}}
-  {%- endfor -%}
-{%- endfor %}
-- name: Benchmarks
-  jobs:
-  {%- for run_var in (benchmarks.flavors) %}
-  - Benchmark{{ run_var.title }}
-  {%- endfor %}
-- name: Semver Management
-  jobs:
-  {%- for semverPiece in ['major', 'minor', 'patch'] %}
-  - Bump{{ semverPiece.title() }}
-  {%- endfor %}
-
 resources:
 - name: concourse-metadata-resource
   type: concourse-metadata-resource
@@ -171,12 +116,7 @@ resources:
     paths:
     - ci/*
     {{ github_access() | indent(4) }}
-- name: geode-benchmarks
-  type: git
-  source:
-    branch: {{benchmarks.benchmark_branch}}
-    depth: 1
-    uri: https://github.com/apache/geode-benchmarks.git
+
 - name: geode-build-version
   type: semver
   source:
@@ -185,12 +125,7 @@ resources:
     initial_version: {{ metadata.initial_version }}
     json_key: ((!concourse-gcp-key))
     key: semvers/((pipeline-prefix))((geode-build-branch))/number
-- name: geode-passing-tokens
-  type: json-gcs-resource
-  source:
-    bucket: ((artifact-bucket))
-    json_key: ((concourse-gcp-key))
-    versioned_file: semvers/((pipeline-prefix))((geode-build-branch))/passing-build-tokens.json
+
 - name: alpine-tools-image
   type: docker-image
   source:
@@ -199,12 +134,6 @@ resources:
     repository: gcr.io/((gcp-project))/((pipeline-prefix))alpine-tools
     tag: latest
 
-- name: windows-builder-image-family
-  type: gci
-  source:
-    key: ((concourse-gcp-key))
-    family_project: ((gcp-project))
-    family: ((pipeline-prefix))windows-geode-builder
 
 - name: linux-builder-image-family
   type: gci
@@ -238,18 +167,6 @@ resource_types:
     repository: gcr.io/((gcp-project))/((pipeline-prefix))gcs-resource-with-json-content
     tag: latest
 jobs:
-{% for semverPiece in ['major', 'minor', 'patch'] -%}
-- name: Bump{{ semverPiece.title() }}
-  serial: true
-  plan:
-  - get: geode-build-version
-    params: { bump: {{ semverPiece }},
-              pre: ((semver-prerelease-token)),
-              pre_without_version: true }
-  - put: geode-build-version
-    params:
-      file: geode-build-version/number
-{% endfor %}
 - name: {{build_test.name}}
   public: true
   max_in_flight: {{build_test.MAX_IN_FLIGHT}}
@@ -394,221 +311,6 @@ jobs:
               - name: geode-ci
               - name: instance-data
             timeout: 1h
-
-- name: UpdatePassingTokens
-  public: true
-  serial: true
-  plan:
-  - aggregate:
-    - get: alpine-tools-image
-    - get: geode
-      passed: &update-token-passed-anchor
-{%- if repository.upstream_fork != "apache" or repository.branch == "develop" or repository.branch.startswith("support/") %}
-      - PublishArtifacts
-{% else %}
-      {{- all_gating_jobs() | indent(6) }}
-{% endif %}
-      trigger: true
-    - get: geode-build-version
-      trigger: true
-      passed: *update-token-passed-anchor
-  - task: couple-sha-and-build-id
-    image: alpine-tools-image
-    config:
-      platform: linux
-      inputs:
-      - name: geode
-      - name: geode-build-version
-      outputs:
-      - name: geode-passing-tokens
-      run:
-        path: bash
-        args:
-        - -cx
-        - |
-          pushd geode
-            GEODE_SHA=$(git rev-parse HEAD)
-          popd
-          GEODE_SEMVER=$(cat geode-build-version/number)
-
-          GS_PATH=gs://((artifact-bucket))/semvers/((pipeline-prefix))((geode-build-branch))/passing-build-tokens.json
-          CURRENT_PASSING_SHA=$(gsutil cat ${GS_PATH} | jq -r .ref)
-          set -e
-          # Check that the incoming GEODE_SHA is a descendent of the currently stored value.
-          # Keeps us from winding back the repository in the case of an out-of-order pipeline pass
-          if [ -n "${CURRENT_PASSING_SHA}" ]; then
-            cd geode
-            if git merge-base --is-ancestor ${CURRENT_PASSING_SHA} ${GEODE_SHA}; then
-              cat > ../geode-passing-tokens/passing-build-tokens.json <<JSON
-          {
-            "ref": "${GEODE_SHA}",
-            "semver": "${GEODE_SEMVER}"
-          }
-          JSON
-            fi
-          fi
-  - aggregate:
-    - put: geode-passing-tokens
-      params:
-        file: geode-passing-tokens/passing-build-tokens.json
-
-{% for run_var in (benchmarks.flavors) %}
-- name: Benchmark{{ run_var.title }}
-  public: true
-  max_in_flight: 2
-  plan:
-  - get: geode-ci
-    passed: &benchmark-inputs
-    - Build
-  - get: alpine-tools-image
-  - aggregate:
-    - get: geode
-      passed: *benchmark-inputs
-      trigger: true
-    - get: geode-benchmarks
-    - get: geode-build-version
-      trigger: true
-      passed: *benchmark-inputs
-    - put: concourse-metadata-resource
-  - do:
-    - task: run_benchmarks{{ run_var.title }}
-      image: alpine-tools-image
-      config:
-        platform: linux
-        params:
-          AWS_ACCESS_KEY_ID: ((benchmarks-access-key-id))
-          AWS_SECRET_ACCESS_KEY: ((benchmarks-secret-access-key))
-          AWS_DEFAULT_REGION: us-west-2
-          AWS_REGION: us-west-2
-          ARTIFACT_BUCKET: ((artifact-bucket))
-          BENCHMARKS_BRANCH: {{benchmarks.benchmark_branch}}
-          BASELINE_BRANCH: {{benchmarks.baseline_branch}}
-          BASELINE_VERSION: {{benchmarks.baseline_version}}
-          FLAGS: {{ run_var.flag }}
-          TAG_POSTFIX: {{ run_var.title }}
-          TEST_OPTIONS: {{ run_var.options }}
-        run:
-          path: geode-ci/ci/scripts/run_benchmarks.sh
-        inputs:
-        - name: geode
-        - name: geode-ci
-        - name: geode-benchmarks
-        - name: concourse-metadata-resource
-        outputs:
-        - name: results
-      timeout: 8h
-      ensure:
-        do:
-        - task: cleanup_benchmarks
-          image: alpine-tools-image
-          config:
-            platform: linux
-            params:
-              AWS_ACCESS_KEY_ID: ((benchmarks-access-key-id))
-              AWS_SECRET_ACCESS_KEY: ((benchmarks-secret-access-key))
-              AWS_DEFAULT_REGION: us-west-2
-              AWS_REGION: us-west-2
-              ARTIFACT_BUCKET: ((artifact-bucket))
-              BASELINE_BRANCH: {{benchmarks.baseline_branch}}
-              BASELINE_VERSION: {{benchmarks.baseline_version}}
-              FLAGS: {{ run_var.flag }}
-              TAG_POSTFIX: {{ run_var.title }}
-              TEST_OPTIONS: {{ run_var.options }}
-            run:
-              path: geode-ci/ci/scripts/cleanup_benchmarks.sh
-            inputs:
-            - name: geode
-            - name: geode-ci
-            - name: geode-benchmarks
-            - name: concourse-metadata-resource
-            - name: results
-{% endfor %}
-{% if repository.upstream_fork != "apache" or repository.branch == "develop" or repository.branch.startswith("support/") %}
-- name: PublishArtifacts
-  public: true
-  plan:
-  - aggregate:
-    - get: geode-ci
-      passed: &publish-passed-inputs
-      {{- all_gating_jobs() | indent(6) }}
-    - get: alpine-tools-image
-    - get: geode
-      passed: *publish-passed-inputs
-      trigger: true
-    - get: linux-builder-image-family
-  - aggregate:
-    - get: geode-build-version
-      trigger: true
-      passed: *publish-passed-inputs
-    - put: concourse-metadata-resource
-    {{ init_retry()|indent(4) }}
-  - task: create_instance
-    image: alpine-tools-image
-    config:
-      platform: linux
-      params:
-        {{ common_instance_params(publish_artifacts) | indent(8) }}
-        GEODE_BRANCH: {{repository.branch}}
-        GEODE_FORK: {{repository.fork}}
-        JAVA_BUILD_VERSION: {{ java_build_version.version }}
-        IMAGE_FAMILY_NAME: ((pipeline-prefix))linux-geode-builder
-      run:
-        path: geode-ci/ci/scripts/create_instance.sh
-      inputs:
-      - name: concourse-metadata-resource
-      - name: geode-ci
-      - name: geode
-      - name: attempts-log
-        path: old
-      outputs:
-      - name: instance-data
-      - name: attempts-log
-        path: new
-    timeout: 20m
-    attempts: 5
-  - task: rsync_code_up
-    image: alpine-tools-image
-    config:
-      platform: linux
-      run:
-        path: geode-ci/ci/scripts/rsync_code_up.sh
-      inputs:
-      - name: geode-ci
-      - name: geode
-      - name: instance-data
-    timeout: 5m
-  - task: publish
-    image: alpine-tools-image
-    config:
-      platform: linux
-      params:
-        MAINTENANCE_VERSION: ((geode-build-branch))
-        ARTIFACT_BUCKET: ((artifact-bucket))
-        SERVICE_ACCOUNT: ((!concourse-gcp-account))
-        JAVA_BUILD_VERSION: {{ java_build_version.version }}
-        MAVEN_SNAPSHOT_BUCKET: ((maven-snapshot-bucket))
-        GRADLE_GLOBAL_ARGS: ((gradle-global-args))
-      run:
-        path: geode-ci/ci/scripts/execute_publish.sh
-      inputs:
-      - name: instance-data
-      - name: geode
-      - name: geode-ci
-      - name: geode-build-version
-    ensure:
-      do:
-      - task: delete_instance
-        image: alpine-tools-image
-        config:
-          platform: linux
-          run:
-            path: geode-ci/ci/scripts/delete_instance.sh
-          inputs:
-          - name: geode-ci
-          - name: instance-data
-        timeout: 1h
-
-{% endif %}
 
 {%- for test in tests if not test.name=="StressNew" %}
   {%- set parameters = {} %}

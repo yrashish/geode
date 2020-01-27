@@ -84,7 +84,7 @@ tests:
   DUNIT_PARALLEL_FORKS: '0'
   EXECUTE_TEST_TIMEOUT: 30m
   GRADLE_TASK: test
-  MAX_IN_FLIGHT: 1
+  MAX_IN_FLIGHT: 5
   ONLY_JDK: 8
   PARALLEL_DUNIT: 'false'
   PARALLEL_GRADLE: 'true'
@@ -97,7 +97,7 @@ tests:
   DUNIT_PARALLEL_FORKS: '0'
   EXECUTE_TEST_TIMEOUT: 1h30m
   GRADLE_TASK: acceptanceTest
-  MAX_IN_FLIGHT: 2
+  MAX_IN_FLIGHT: 5
   PARALLEL_DUNIT: 'false'
   PARALLEL_GRADLE: 'false'
   PLATFORM: linux
@@ -109,7 +109,7 @@ tests:
   DUNIT_PARALLEL_FORKS: '24'
   EXECUTE_TEST_TIMEOUT: 3h00m
   GRADLE_TASK: distributedTest
-  MAX_IN_FLIGHT: 3
+  MAX_IN_FLIGHT: 5
   PARALLEL_DUNIT: 'true'
   PLATFORM: linux
   RAM: '250'
@@ -120,7 +120,7 @@ tests:
   DUNIT_PARALLEL_FORKS: '48'
   EXECUTE_TEST_TIMEOUT: 40m
   GRADLE_TASK: integrationTest
-  MAX_IN_FLIGHT: 1
+  MAX_IN_FLIGHT: 5
   PARALLEL_DUNIT: 'true'
   PLATFORM: linux
   RAM: '90'
@@ -131,88 +131,8 @@ tests:
   DUNIT_PARALLEL_FORKS: '48'
   EXECUTE_TEST_TIMEOUT: 1h
   GRADLE_TASK: upgradeTest
-  MAX_IN_FLIGHT: 2
+  MAX_IN_FLIGHT: 5
   PARALLEL_DUNIT: 'true'
   PLATFORM: linux
   RAM: '210'
   name: Upgrade
-- ARTIFACT_SLUG: stressnewtestfiles
-  CALL_STACK_TIMEOUT: '20700'
-  CPUS: '96'
-  DUNIT_PARALLEL_FORKS: '24'
-  EXECUTE_TEST_TIMEOUT: 6h
-  GRADLE_TASK: repeatTest
-  PARALLEL_DUNIT: 'true'
-  PARALLEL_GRADLE: 'false'
-  PLATFORM: linux
-  RAM: '280'
-  name: StressNew
-- ARTIFACT_SLUG: windows-acceptancetestfiles
-  CPUS: '16'
-  DUNIT_PARALLEL_FORKS: '0'
-  EXECUTE_TEST_TIMEOUT: 6h
-  GRADLE_TASK: :geode-assembly:acceptanceTest
-  MAX_IN_FLIGHT: 3
-  PARALLEL_DUNIT: 'false'
-  PARALLEL_GRADLE: 'false'
-  PLATFORM: windows
-  RAM: '64'
-  name: WindowsAcceptance
-- ARTIFACT_SLUG: windows-gfshdistributedtest
-  CPUS: '16'
-  DUNIT_PARALLEL_FORKS: '0'
-  EXECUTE_TEST_TIMEOUT: 6h
-  GRADLE_TASK: distributedTest
-  GRADLE_TASK_OPTIONS: -PtestCategory=org.apache.geode.test.junit.categories.GfshTest
-  MAX_IN_FLIGHT: 5
-  PARALLEL_DUNIT: 'false'
-  PARALLEL_GRADLE: 'false'
-  PLATFORM: windows
-  RAM: '64'
-  name: WindowsGfshDistributed
-- ARTIFACT_SLUG: windows-integrationtestfiles
-  CPUS: '16'
-  DUNIT_PARALLEL_FORKS: '0'
-  EXECUTE_TEST_TIMEOUT: 6h
-  GRADLE_TASK: integrationTest
-  GRADLE_TASK_OPTIONS: -x geode-core:integrationTest
-  MAX_IN_FLIGHT: 2
-  PARALLEL_DUNIT: 'false'
-  PARALLEL_GRADLE: 'false'
-  PLATFORM: windows
-  RAM: '64'
-  name: WindowsIntegration
-- ARTIFACT_SLUG: windows-coreintegrationtestfiles
-  CPUS: '16'
-  DUNIT_PARALLEL_FORKS: '0'
-  EXECUTE_TEST_TIMEOUT: 6h
-  GRADLE_TASK: geode-core:integrationTest
-  MAX_IN_FLIGHT: 6
-  PARALLEL_DUNIT: 'false'
-  PARALLEL_GRADLE: 'false'
-  PLATFORM: windows
-  RAM: '64'
-  name: WindowsCoreIntegration
-- ARTIFACT_SLUG: windows-unittestfiles
-  CPUS: '16'
-  DUNIT_PARALLEL_FORKS: '0'
-  EXECUTE_TEST_TIMEOUT: 6h
-  GRADLE_TASK: test
-  MAX_IN_FLIGHT: 1
-  PARALLEL_DUNIT: 'false'
-  PLATFORM: windows
-  RAM: '64'
-  name: WindowsUnit
-- ARTIFACT_SLUG: apicheck
-  CALL_STACK_TIMEOUT: '20700'
-  CPUS: '4'
-  DUNIT_PARALLEL_FORKS: '0'
-  EXECUTE_TEST_TIMEOUT: 1h
-  GRADLE_TASK: geode-assembly:japicmp
-  MAX_IN_FLIGHT: 1
-  ONLY_JDK: 8
-  PARALLEL_DUNIT: 'false'
-  PARALLEL_GRADLE: 'false'
-  PLATFORM: linux
-  RAM: '16'
-  name: ApiCheck
