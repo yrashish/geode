@@ -22,6 +22,8 @@ apply from: "${rootDir}/${scriptDir}/warnings.gradle"
 
 
 import org.apache.geode.gradle.plugins.DependencyConstraints
+import org.apache.maven.artifact.versioning.ComparableVersion
+import org.apache.maven.artifact.versioning.DefaultArtifactVersion
 
 import java.nio.file.Paths
 import org.gradle.api.file.FileCollection
@@ -717,33 +719,44 @@ acceptanceTest {
 // For the list of 'old-versions' find the newest using semver
 // If the newest old release is a differnt major # than us, we can do what we want
 // otherwise, fail on x,y,z
-def newest = ""
-project(':geode-old-versions').subprojects.each { oldReleaseProj ->
-  def semver = oldReleaseProj.name
-  if (newest.length() == 0) {
-    newest = semver
-  } else {
-    if (semver.numberAwareCompareTo(newest)) {
-      newest = semver
+
+def mostRecentReleaseProj = project(':geode-old-versions').subprojects.max(){ v -> new ComparableVersion(v.name)}
+def newest = mostRecentReleaseProj.name
+
+import me.champeau.gradle.japicmp.report.ViolationRule
+import me.champeau.gradle.japicmp.report.Violation
+import japicmp.model.JApiCompatibility
+import japicmp.model.JApiMethod
+
+class AllowMajorBreakingChanges implements ViolationRule {
+  @Override
+  Violation maybeViolation(final JApiCompatibility member) {
+    if (member instanceof JApiMethod) {
+      if (!member.annotations.find { it.fullyQualifiedName == 'org.gradle.api.Incubating' }) {
+        if (!member.jApiClass.annotations.find {
+          it.fullyQualifiedName == 'org.gradle.api.Incubating'
+        }) {
+          Violation.error(member, "New method is not annotated with @Incubating")
+        }
+      }
     }
   }
 }
-println("newest = ${newest}")
 tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
-  inputs.files {tasks.named('distTar')}
+  inputs.files { tasks.named('distTar') }
   def ourUnpackTaskProvider = project(":geode-old-versions:${newest}").tasks.named('downloadAndUnzipFile')
-  inputs.files {ourUnpackTaskProvider}
-  
+  inputs.files { ourUnpackTaskProvider }
+
   def d = Paths.get(project(":geode-old-versions:${newest}").buildDir.path.toString(), "apache-geode-${newest}", 'lib')
   oldClasspath = files()
   oldArchives = files()
   doFirst {
     oldClasspath = files(file(d).listFiles())
     oldArchives = files(file(d).listFiles(new FilenameFilter() {
-        public boolean accept(File dir, String name) {
-          return name.toLowerCase().startsWith("geode-") && name.toLowerCase().endsWith(".jar");
-        };
-      }))
+      public boolean accept(File dir, String name) {
+        return name.toLowerCase().startsWith("geode-") && name.toLowerCase().endsWith(".jar");
+      };
+    }))
   }
 
   newClasspath = configurations.geodeArchives
@@ -755,8 +768,13 @@ tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
   onlyModified = true
   accessModifier = "protected"
 
-  failOnModification = true
-  failOnSourceIncompatibility = true
+  def failBuild = true
+  if (new DefaultArtifactVersion(version).majorVersion > new DefaultArtifactVersion(newest).majorVersion) {
+    logger.error("disable fail on binary breaking changes")
+    failBuild = false
+  }
+  failOnModification = failBuild
+  failOnSourceIncompatibility = failBuild
 
 //  onlyBinaryIncompatibleModified = true
 //  includeSynthetic = true
@@ -772,5 +790,6 @@ tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
    title = "Geode API Compatibility Report"
    description = "Comparing current ${version} against downloaded v${newest}."
    reportName = "rich-report-${reportFileName}.html"
+   addDefaultRules = failBuild
  }
 }
