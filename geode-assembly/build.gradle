@@ -714,31 +714,37 @@ acceptanceTest {
   dependsOn(tasks.docker)
 }
 
-tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
-  dependsOn(distTar)
-  // For the list of 'old-versions' find the newest using semver
-  // If the newest old release is a differnt major # than us, we can do what we want
-  // otherwise, fail on x,y,z
-  def newest = ""
-  project(':geode-old-versions').subprojects.each { oldReleaseProj ->
-    def semver = oldReleaseProj.name
-    if (newest.length() == 0) {
+// For the list of 'old-versions' find the newest using semver
+// If the newest old release is a differnt major # than us, we can do what we want
+// otherwise, fail on x,y,z
+def newest = ""
+project(':geode-old-versions').subprojects.each { oldReleaseProj ->
+  def semver = oldReleaseProj.name
+  if (newest.length() == 0) {
+    newest = semver
+  } else {
+    if (semver.numberAwareCompareTo(newest)) {
       newest = semver
-    } else {
-      if (semver.numberAwareCompareTo(newest)) {
-        newest = semver
-      }
     }
   }
-  println("newest = ${newest}")
-  dependsOn(project(":geode-old-versions:${newest}").tasks.named('downloadAndUnzipFile'))
+}
+println("newest = ${newest}")
+tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
+  inputs.files {tasks.named('distTar')}
+  def ourUnpackTaskProvider = project(":geode-old-versions:${newest}").tasks.named('downloadAndUnzipFile')
+  inputs.files {ourUnpackTaskProvider}
+  
   def d = Paths.get(project(":geode-old-versions:${newest}").buildDir.path.toString(), "apache-geode-${newest}", 'lib')
-  oldClasspath = files(file(d).listFiles())
-  oldArchives = files(file(d).listFiles(new FilenameFilter() {
-    public boolean accept(File dir, String name) {
-      return name.toLowerCase().startsWith("geode-") && name.toLowerCase().endsWith(".jar");
-    };
-  }))
+  oldClasspath = files()
+  oldArchives = files()
+  doFirst {
+    oldClasspath = files(file(d).listFiles())
+    oldArchives = files(file(d).listFiles(new FilenameFilter() {
+        public boolean accept(File dir, String name) {
+          return name.toLowerCase().startsWith("geode-") && name.toLowerCase().endsWith(".jar");
+        };
+      }))
+  }
 
   newClasspath = configurations.geodeArchives
   newArchives = configurations.geodeArchives.filter { File f ->
@@ -747,9 +753,13 @@ tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
 
   ignoreMissingClasses = true
   onlyModified = true
+  accessModifier = "protected"
+
   failOnModification = true
   failOnSourceIncompatibility = true
-  accessModifier = "protected"
+
+//  onlyBinaryIncompatibleModified = true
+//  includeSynthetic = true
 
   def reportFileName = "japi-v${newest}-${version}"
   txtOutputFile = file("$buildDir/reports/${reportFileName}.txt")
@@ -761,5 +771,6 @@ tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
  richReport {
    title = "Geode API Compatibility Report"
    description = "Comparing current ${version} against downloaded v${newest}."
+   reportName = "rich-report-${reportFileName}.html"
  }
 }
