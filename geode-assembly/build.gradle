@@ -716,8 +716,23 @@ acceptanceTest {
 
 tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
   dependsOn(distTar)
-  dependsOn(project(':geode-old-versions:1.11.0').tasks.named('downloadAndUnzipFile'))
-  def d = Paths.get(project(':geode-old-versions:1.11.0').buildDir.path.toString(), 'apache-geode-1.11.0', 'lib')
+  // For the list of 'old-versions' find the newest using semver
+  // If the newest old release is a differnt major # than us, we can do what we want
+  // otherwise, fail on x,y,z
+  def newest = ""
+  project(':geode-old-versions').subprojects.each { oldReleaseProj ->
+    def semver = oldReleaseProj.name
+    if (newest.length() == 0) {
+      newest = semver
+    } else {
+      if (semver.numberAwareCompareTo(newest)) {
+        newest = semver
+      }
+    }
+  }
+  println("newest = ${newest}")
+  dependsOn(project(":geode-old-versions:${newest}").tasks.named('downloadAndUnzipFile'))
+  def d = Paths.get(project(":geode-old-versions:${newest}").buildDir.path.toString(), "apache-geode-${newest}", 'lib')
   oldClasspath = files(file(d).listFiles())
   oldArchives = files(file(d).listFiles(new FilenameFilter() {
     public boolean accept(File dir, String name) {
@@ -736,15 +751,15 @@ tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
   failOnSourceIncompatibility = true
   accessModifier = "protected"
 
-  def reportFileName = "japi-v1.11.0-${version}" 
+  def reportFileName = "japi-v${newest}-${version}"
   txtOutputFile = file("$buildDir/reports/${reportFileName}.txt")
   htmlOutputFile = file("$buildDir/reports/${reportFileName}.html")
   packageExcludes = ["*internal*"]
   packageIncludes = ["org.apache.geode.*"]
   annotationExcludes = ["@Experimental"]
 
-//  richReport {
-//    title = "Geode API Compatibility Report"
-//    description = "Comparing current ${version} against downloaded v1.11.0."
-//  }
+ richReport {
+   title = "Geode API Compatibility Report"
+   description = "Comparing current ${version} against downloaded v${newest}."
+ }
 }
