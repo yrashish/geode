@@ -16,6 +16,7 @@
  */
 
 import me.champeau.gradle.japicmp.JapicmpTask
+import me.champeau.gradle.japicmp.report.Severity
 
 apply from: "${rootDir}/${scriptDir}/standard-subproject-configuration.gradle"
 apply from: "${rootDir}/${scriptDir}/warnings.gradle"
@@ -731,14 +732,8 @@ import japicmp.model.JApiMethod
 class AllowMajorBreakingChanges implements ViolationRule {
   @Override
   Violation maybeViolation(final JApiCompatibility member) {
-    if (member instanceof JApiMethod) {
-      if (!member.annotations.find { it.fullyQualifiedName == 'org.gradle.api.Incubating' }) {
-        if (!member.jApiClass.annotations.find {
-          it.fullyQualifiedName == 'org.gradle.api.Incubating'
-        }) {
-          Violation.error(member, "New method is not annotated with @Incubating")
-        }
-      }
+    if (!member.binaryCompatible()) {
+      Violation.notBinaryCompatible(member, Severity.warning)
     }
   }
 }
@@ -768,13 +763,13 @@ tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
   onlyModified = true
   accessModifier = "protected"
 
-  def failBuild = true
+  def allowMajorBreaking = false
   if (new DefaultArtifactVersion(version).majorVersion > new DefaultArtifactVersion(newest).majorVersion) {
     logger.error("disable fail on binary breaking changes")
-    failBuild = false
+    allowMajorBreaking = true
   }
-  failOnModification = failBuild
-  failOnSourceIncompatibility = failBuild
+  failOnModification = allowMajorBreaking
+  failOnSourceIncompatibility = allowMajorBreaking
 
 //  onlyBinaryIncompatibleModified = true
 //  includeSynthetic = true
@@ -790,6 +785,9 @@ tasks.register('japicmp', me.champeau.gradle.japicmp.JapicmpTask) {
    title = "Geode API Compatibility Report"
    description = "Comparing current ${version} against downloaded v${newest}."
    reportName = "rich-report-${reportFileName}.html"
-   addDefaultRules = failBuild
+   if (allowMajorBreaking) {
+     addRule(AllowMajorBreakingChanges)
+//     addDefaultRules = failBuild
+   }
  }
 }
