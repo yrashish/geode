@@ -31,6 +31,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.SystemFailure;
+import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.annotations.internal.MakeNotStatic;
 import org.apache.geode.internal.monitoring.ThreadsMonitoring;
 import org.apache.geode.logging.internal.log4j.api.LogService;
@@ -282,6 +283,11 @@ public class FunctionExecutionPooledExecutor extends ThreadPoolExecutor {
     if (threadMonitoring != null) {
       threadMonitoring.endMonitor();
     }
+  }
+
+  @VisibleForTesting
+  public BlockingQueue<Runnable> getBufferQueue() {
+    return bufferQueue;
   }
 
   private static int getCorePoolSize(int maxSize) {
