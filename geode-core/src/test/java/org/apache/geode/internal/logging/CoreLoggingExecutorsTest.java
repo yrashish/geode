@@ -264,7 +264,8 @@ public class CoreLoggingExecutorsTest {
   }
 
   /**
-   * Creates and passes up BlockingQueue. PooledExecutorWithDMStats then creates and passes up SynchronousQueue
+   * Creates and passes up BlockingQueue. PooledExecutorWithDMStats then creates and passes up
+   * SynchronousQueue
    */
   @Test
   public void newThreadPool() {
